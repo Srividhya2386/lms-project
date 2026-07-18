@@ -34,10 +34,11 @@ router.post('/', auth, requireInstructor, async (req, res) => {
     const course = await Course.create({
       title,
       description,
-      instructor: req.user.id,
+      instructor: req.user.userId,
     });
     res.status(201).json(course);
   } catch (err) {
+    console.error('COURSE CREATE ERROR:', err.message);
     res.status(500).json({ message: 'Server error creating course.' });
   }
 });
@@ -46,7 +47,7 @@ router.post('/', auth, requireInstructor, async (req, res) => {
 router.put('/:id', auth, requireInstructor, async (req, res) => {
   try {
     const course = await Course.findOneAndUpdate(
-      { _id: req.params.id, instructor: req.user.id},
+      { _id: req.params.id, instructor: req.user.userId },
       req.body,
       { new: true }
     );
@@ -62,7 +63,7 @@ router.delete('/:id', auth, requireInstructor, async (req, res) => {
   try {
     const course = await Course.findOneAndDelete({
       _id: req.params.id,
-      instructor: req.user.id,
+      instructor: req.user.userId,
     });
     if (!course) return res.status(404).json({ message: 'Course not found or not owned by you.' });
     res.json({ message: 'Course deleted.' });
