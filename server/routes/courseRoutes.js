@@ -21,7 +21,7 @@ router.get('/:id', auth, async (req, res) => {
     if (!course) return res.status(404).json({ message: 'Course not found.' });
     res.json(course);
   } catch (err) {
-    res.status(500).json({ message: 'Server error fetching course.' });
+    console.error('COURSE FETCH ERROR:', err.message); res.status(500).json({ message: 'Server error fetching course.' });
   }
 });
 

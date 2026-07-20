@@ -1,5 +1,4 @@
-const mongoose = require('mongoose');
-
+﻿const mongoose = require('mongoose');
 const QuestionSchema = new mongoose.Schema(
   {
     question: { type: String, required: true },
@@ -11,7 +10,6 @@ const QuestionSchema = new mongoose.Schema(
   },
   { _id: false }
 );
-
 const LessonSchema = new mongoose.Schema(
   {
     course: {
@@ -35,5 +33,4 @@ const LessonSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 module.exports = mongoose.model('Lesson', LessonSchema);

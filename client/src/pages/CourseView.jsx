@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 
@@ -14,11 +14,12 @@ export default function CourseView() {
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [generating, setGenerating] = useState(false);
 
-  // Quiz-taking state: { [questionIndex]: selectedOptionIndex }
   const [answers, setAnswers] = useState({});
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [lastAttempt, setLastAttempt] = useState(null);
+  const [pastAttempts, setPastAttempts] = useState([]);
+  const [loadingAttempts, setLoadingAttempts] = useState(false);
 
-  // Add-lesson form state (instructor only)
   const [showAddLesson, setShowAddLesson] = useState(false);
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonContent, setLessonContent] = useState('');
@@ -31,8 +32,13 @@ export default function CourseView() {
       return;
     }
     fetchCourse();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+    if (activeLessonId) {
+      fetchAttempts(activeLessonId);
+    }
+  }, [activeLessonId]);
 
   const fetchCourse = async () => {
     try {
@@ -50,12 +56,27 @@ export default function CourseView() {
     }
   };
 
+  const fetchAttempts = async (lessonId) => {
+    setLoadingAttempts(true);
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/lessons/${lessonId}/attempts`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPastAttempts(res.data);
+    } catch (err) {
+      setPastAttempts([]);
+    } finally {
+      setLoadingAttempts(false);
+    }
+  };
+
   const activeLesson = course?.lessons?.find((l) => l._id === activeLessonId);
 
   const selectLesson = (lessonId) => {
     setActiveLessonId(lessonId);
     setAnswers({});
-    setSubmitted(false);
+    setLastAttempt(null);
   };
 
   const handleAddLesson = async (e) => {
@@ -101,7 +122,8 @@ export default function CourseView() {
         ),
       }));
       setAnswers({});
-      setSubmitted(false);
+      setLastAttempt(null);
+      setPastAttempts([]);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to generate quiz.');
     } finally {
@@ -110,16 +132,32 @@ export default function CourseView() {
   };
 
   const selectAnswer = (questionIndex, optionIndex) => {
-    if (submitted) return;
+    if (lastAttempt) return;
     setAnswers((prev) => ({ ...prev, [questionIndex]: optionIndex }));
   };
 
-  const score = () => {
-    if (!activeLesson?.quiz) return 0;
-    return activeLesson.quiz.reduce(
-      (sum, q, i) => sum + (answers[i] === q.correctIndex ? 1 : 0),
-      0
-    );
+  const handleSubmitQuiz = async () => {
+    if (!activeLesson?.quiz) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const answersArray = activeLesson.quiz.map((_, i) =>
+        answers[i] !== undefined ? answers[i] : null
+      );
+
+      const res = await axios.post(
+        `http://localhost:5000/api/lessons/${activeLesson._id}/attempts`,
+        { answers: answersArray },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setLastAttempt(res.data);
+      setPastAttempts((prev) => [res.data, ...prev]);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to submit quiz.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -138,7 +176,7 @@ export default function CourseView() {
   return (
     <div className="min-h-screen bg-gray-100 px-4 py-8">
       <div className="max-w-4xl mx-auto">
-        <Link to="/dashboard" className="text-sm text-blue-600">â† Back to Dashboard</Link>
+        <Link to="/dashboard" className="text-sm text-blue-600">Back to Dashboard</Link>
 
         <div className="flex items-center justify-between mt-2 mb-1">
           <h1 className="text-2xl font-bold text-blue-600">{course.title}</h1>
@@ -198,7 +236,6 @@ export default function CourseView() {
           <p className="text-gray-500">No lessons in this course yet.</p>
         ) : (
           <div className="grid md:grid-cols-3 gap-6">
-            {/* Lesson list */}
             <div className="md:col-span-1">
               <h2 className="text-sm font-semibold text-gray-500 mb-2 uppercase">Lessons</h2>
               <div className="space-y-2">
@@ -218,7 +255,6 @@ export default function CourseView() {
               </div>
             </div>
 
-            {/* Lesson content + quiz */}
             <div className="md:col-span-2 bg-white rounded-lg shadow-md p-6">
               {activeLesson && (
                 <>
@@ -254,7 +290,7 @@ export default function CourseView() {
                               const isSelected = answers[qi] === oi;
                               const isCorrect = oi === q.correctIndex;
                               let style = 'border-gray-300';
-                              if (submitted) {
+                              if (lastAttempt) {
                                 if (isCorrect) style = 'border-green-500 bg-green-50';
                                 else if (isSelected) style = 'border-red-500 bg-red-50';
                               } else if (isSelected) {
@@ -274,18 +310,47 @@ export default function CourseView() {
                         </div>
                       ))}
 
-                      {!submitted ? (
+                      {!lastAttempt ? (
                         <button
-                          onClick={() => setSubmitted(true)}
-                          disabled={Object.keys(answers).length < activeLesson.quiz.length}
+                          onClick={handleSubmitQuiz}
+                          disabled={
+                            submitting ||
+                            Object.keys(answers).length < activeLesson.quiz.length
+                          }
                           className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50"
                         >
-                          Submit Quiz
+                          {submitting ? 'Submitting...' : 'Submit Quiz'}
                         </button>
                       ) : (
-                        <p className="font-semibold">
-                          Score: {score()} / {activeLesson.quiz.length}
-                        </p>
+                        <div>
+                          <p className="font-semibold mb-3">
+                            Score: {lastAttempt.score} / {lastAttempt.total}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setAnswers({});
+                              setLastAttempt(null);
+                            }}
+                            className="text-sm text-blue-600 hover:underline"
+                          >
+                            Retake quiz
+                          </button>
+                        </div>
+                      )}
+
+                      {!loadingAttempts && pastAttempts.length > 0 && (
+                        <div className="mt-6 pt-4 border-t">
+                          <h4 className="text-sm font-semibold text-gray-500 uppercase mb-2">
+                            Your past attempts
+                          </h4>
+                          <div className="space-y-1">
+                            {pastAttempts.map((a) => (
+                              <p key={a._id} className="text-sm text-gray-600">
+                                {a.score} / {a.total} — {new Date(a.createdAt).toLocaleString()}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   ) : (
