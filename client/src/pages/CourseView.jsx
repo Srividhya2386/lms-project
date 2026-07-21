@@ -13,6 +13,7 @@ export default function CourseView() {
   const [error, setError] = useState('');
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
 
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -77,6 +78,40 @@ export default function CourseView() {
     setActiveLessonId(lessonId);
     setAnswers({});
     setLastAttempt(null);
+  };
+
+  const handleEnroll = async () => {
+    setEnrolling(true);
+    setError('');
+    try {
+      await axios.post(
+        `http://localhost:5000/api/courses/${id}/enroll`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await fetchCourse();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to enroll.');
+    } finally {
+      setEnrolling(false);
+    }
+  };
+
+  const handleUnenroll = async () => {
+    const confirmed = window.confirm('Unenroll from this course?');
+    if (!confirmed) return;
+    setEnrolling(true);
+    setError('');
+    try {
+      await axios.delete(`http://localhost:5000/api/courses/${id}/enroll`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await fetchCourse();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to unenroll.');
+    } finally {
+      setEnrolling(false);
+    }
   };
 
   const handleAddLesson = async (e) => {
@@ -173,6 +208,9 @@ export default function CourseView() {
     );
   }
 
+  const isStudent = user?.role === 'student';
+  const isInstructor = user?.role === 'instructor';
+
   return (
     <div className="min-h-screen bg-gray-100 px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -180,7 +218,7 @@ export default function CourseView() {
 
         <div className="flex items-center justify-between mt-2 mb-1">
           <h1 className="text-2xl font-bold text-blue-600">{course.title}</h1>
-          {user?.role === 'instructor' && (
+          {isInstructor && (
             <button
               onClick={() => setShowAddLesson((prev) => !prev)}
               className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded font-medium hover:bg-blue-700"
@@ -190,10 +228,42 @@ export default function CourseView() {
           )}
         </div>
         {course.description && (
-          <p className="text-gray-600 mt-1 mb-6">{course.description}</p>
+          <p className="text-gray-600 mt-1 mb-2">{course.description}</p>
+        )}
+        <p className="text-gray-400 text-xs mb-6">
+          {course.studentCount} student{course.studentCount === 1 ? '' : 's'} enrolled
+        </p>
+
+        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+        {isStudent && !course.isEnrolled && (
+          <div className="bg-white p-6 rounded-lg shadow-md mb-6 text-center">
+            <p className="text-gray-600 mb-4">
+              Enroll in this course to see its lessons and quizzes.
+            </p>
+            <button
+              onClick={handleEnroll}
+              disabled={enrolling}
+              className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {enrolling ? 'Enrolling...' : 'Enroll in Course'}
+            </button>
+          </div>
         )}
 
-        {showAddLesson && (
+        {isStudent && course.isEnrolled && (
+          <div className="mb-4">
+            <button
+              onClick={handleUnenroll}
+              disabled={enrolling}
+              className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50"
+            >
+              {enrolling ? 'Working...' : 'Unenroll from this course'}
+            </button>
+          </div>
+        )}
+
+        {isInstructor && showAddLesson && (
           <form
             onSubmit={handleAddLesson}
             className="bg-white p-6 rounded-lg shadow-md mb-6"
@@ -230,138 +300,144 @@ export default function CourseView() {
           </form>
         )}
 
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        {course.isEnrolled ? (
+          (!course.lessons || course.lessons.length === 0) ? (
+            <p className="text-gray-500">No lessons in this course yet.</p>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="md:col-span-1">
+                <h2 className="text-sm font-semibold text-gray-500 mb-2 uppercase">Lessons</h2>
+                <div className="space-y-2">
+                  {course.lessons.map((lesson) => (
+                    <button
+                      key={lesson._id}
+                      onClick={() => selectLesson(lesson._id)}
+                      className={`w-full text-left px-3 py-2 rounded ${
+                        lesson._id === activeLessonId
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      {lesson.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-        {(!course.lessons || course.lessons.length === 0) ? (
-          <p className="text-gray-500">No lessons in this course yet.</p>
-        ) : (
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="md:col-span-1">
-              <h2 className="text-sm font-semibold text-gray-500 mb-2 uppercase">Lessons</h2>
-              <div className="space-y-2">
-                {course.lessons.map((lesson) => (
-                  <button
-                    key={lesson._id}
-                    onClick={() => selectLesson(lesson._id)}
-                    className={`w-full text-left px-3 py-2 rounded ${
-                      lesson._id === activeLessonId
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white hover:bg-gray-50'
-                    }`}
-                  >
-                    {lesson.title}
-                  </button>
-                ))}
+              <div className="md:col-span-2 bg-white rounded-lg shadow-md p-6">
+                {activeLesson && (
+                  <>
+                    <h2 className="text-xl font-semibold mb-3">{activeLesson.title}</h2>
+                    <p className="text-gray-700 whitespace-pre-wrap mb-6">
+                      {activeLesson.content}
+                    </p>
+
+                    {isInstructor && (
+                      <button
+                        onClick={handleGenerateQuiz}
+                        disabled={generating}
+                        className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50 mb-6"
+                      >
+                        {generating
+                          ? 'Generating quiz...'
+                          : activeLesson.quiz?.length > 0
+                          ? 'Regenerate Quiz'
+                          : 'Generate Quiz'}
+                      </button>
+                    )}
+
+                    {activeLesson.quiz?.length > 0 ? (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">Quiz</h3>
+                        {activeLesson.quiz.map((q, qi) => (
+                          <div key={qi} className="mb-5">
+                            <p className="font-medium mb-2">
+                              {qi + 1}. {q.question}
+                            </p>
+                            <div className="space-y-2">
+                              {q.options.map((opt, oi) => {
+                                const isSelected = answers[qi] === oi;
+                                const isCorrect = oi === q.correctIndex;
+                                let style = 'border-gray-300';
+                                if (lastAttempt) {
+                                  if (isCorrect) style = 'border-green-500 bg-green-50';
+                                  else if (isSelected) style = 'border-red-500 bg-red-50';
+                                } else if (isSelected) {
+                                  style = 'border-blue-500 bg-blue-50';
+                                }
+                                return (
+                                  <button
+                                    key={oi}
+                                    onClick={() => selectAnswer(qi, oi)}
+                                    className={`w-full text-left border rounded px-3 py-2 ${style}`}
+                                  >
+                                    {opt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+
+                        {!lastAttempt ? (
+                          <button
+                            onClick={handleSubmitQuiz}
+                            disabled={
+                              submitting ||
+                              Object.keys(answers).length < activeLesson.quiz.length
+                            }
+                            className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {submitting ? 'Submitting...' : 'Submit Quiz'}
+                          </button>
+                        ) : (
+                          <div>
+                            <p className="font-semibold mb-3">
+                              Score: {lastAttempt.score} / {lastAttempt.total}
+                            </p>
+                            <button
+                              onClick={() => {
+                                setAnswers({});
+                                setLastAttempt(null);
+                              }}
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              Retake quiz
+                            </button>
+                          </div>
+                        )}
+
+                        {!loadingAttempts && pastAttempts.length > 0 && (
+                          <div className="mt-6 pt-4 border-t">
+                            <h4 className="text-sm font-semibold text-gray-500 uppercase mb-2">
+                              Your past attempts
+                            </h4>
+                            <div className="space-y-1">
+                              {pastAttempts.map((a) => (
+                                <p key={a._id} className="text-sm text-gray-600">
+                                  {a.score} / {a.total} — {new Date(a.createdAt).toLocaleString()}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-sm">
+                        No quiz yet for this lesson.
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-
-            <div className="md:col-span-2 bg-white rounded-lg shadow-md p-6">
-              {activeLesson && (
-                <>
-                  <h2 className="text-xl font-semibold mb-3">{activeLesson.title}</h2>
-                  <p className="text-gray-700 whitespace-pre-wrap mb-6">
-                    {activeLesson.content}
-                  </p>
-
-                  {user?.role === 'instructor' && (
-                    <button
-                      onClick={handleGenerateQuiz}
-                      disabled={generating}
-                      className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50 mb-6"
-                    >
-                      {generating
-                        ? 'Generating quiz...'
-                        : activeLesson.quiz?.length > 0
-                        ? 'Regenerate Quiz'
-                        : 'Generate Quiz'}
-                    </button>
-                  )}
-
-                  {activeLesson.quiz?.length > 0 ? (
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3">Quiz</h3>
-                      {activeLesson.quiz.map((q, qi) => (
-                        <div key={qi} className="mb-5">
-                          <p className="font-medium mb-2">
-                            {qi + 1}. {q.question}
-                          </p>
-                          <div className="space-y-2">
-                            {q.options.map((opt, oi) => {
-                              const isSelected = answers[qi] === oi;
-                              const isCorrect = oi === q.correctIndex;
-                              let style = 'border-gray-300';
-                              if (lastAttempt) {
-                                if (isCorrect) style = 'border-green-500 bg-green-50';
-                                else if (isSelected) style = 'border-red-500 bg-red-50';
-                              } else if (isSelected) {
-                                style = 'border-blue-500 bg-blue-50';
-                              }
-                              return (
-                                <button
-                                  key={oi}
-                                  onClick={() => selectAnswer(qi, oi)}
-                                  className={`w-full text-left border rounded px-3 py-2 ${style}`}
-                                >
-                                  {opt}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-
-                      {!lastAttempt ? (
-                        <button
-                          onClick={handleSubmitQuiz}
-                          disabled={
-                            submitting ||
-                            Object.keys(answers).length < activeLesson.quiz.length
-                          }
-                          className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {submitting ? 'Submitting...' : 'Submit Quiz'}
-                        </button>
-                      ) : (
-                        <div>
-                          <p className="font-semibold mb-3">
-                            Score: {lastAttempt.score} / {lastAttempt.total}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setAnswers({});
-                              setLastAttempt(null);
-                            }}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            Retake quiz
-                          </button>
-                        </div>
-                      )}
-
-                      {!loadingAttempts && pastAttempts.length > 0 && (
-                        <div className="mt-6 pt-4 border-t">
-                          <h4 className="text-sm font-semibold text-gray-500 uppercase mb-2">
-                            Your past attempts
-                          </h4>
-                          <div className="space-y-1">
-                            {pastAttempts.map((a) => (
-                              <p key={a._id} className="text-sm text-gray-600">
-                                {a.score} / {a.total} — {new Date(a.createdAt).toLocaleString()}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-gray-400 text-sm">
-                      No quiz yet for this lesson.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+          )
+        ) : (
+          !isStudent && (
+            <p className="text-gray-500">
+              You don't have access to view this course's lessons.
+            </p>
+          )
         )}
       </div>
     </div>

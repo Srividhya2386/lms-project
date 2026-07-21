@@ -1,31 +1,56 @@
-const express = require('express');
+﻿const express = require('express');
 const Course = require('../models/Course');
 const { auth, requireInstructor } = require('../middleware/auth');
 
 const router = express.Router();
 
-// GET /api/courses - list all courses
 router.get('/', auth, async (req, res) => {
   try {
     const courses = await Course.find().populate('instructor', 'name email');
-    res.json(courses);
+    const result = courses.map((c) => {
+      const obj = c.toObject();
+      const isEnrolled = c.students.some(
+        (s) => s.toString() === req.user.userId
+      );
+      delete obj.students;
+      return { ...obj, isEnrolled, studentCount: c.students.length };
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ message: 'Server error fetching courses.' });
   }
 });
 
-// GET /api/courses/:id - single course with lessons
 router.get('/:id', auth, async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id).populate('lessons');
+    const course = await Course.findById(req.params.id)
+      .populate('instructor', 'name email')
+      .populate('lessons');
     if (!course) return res.status(404).json({ message: 'Course not found.' });
-    res.json(course);
+
+    const isOwner =
+      req.user.role === 'instructor' &&
+      course.instructor._id.toString() === req.user.userId;
+    const isEnrolled = course.students.some(
+      (s) => s.toString() === req.user.userId
+    );
+    const hasAccess = isOwner || isEnrolled;
+
+    const obj = course.toObject();
+    const studentCount = course.students.length;
+    delete obj.students;
+
+    if (!hasAccess) {
+      return res.json({ ...obj, lessons: [], isEnrolled: false, studentCount });
+    }
+
+    res.json({ ...obj, isEnrolled: true, studentCount });
   } catch (err) {
-    console.error('COURSE FETCH ERROR:', err.message); res.status(500).json({ message: 'Server error fetching course.' });
+    console.error('COURSE FETCH ERROR:', err.message);
+    res.status(500).json({ message: 'Server error fetching course.' });
   }
 });
 
-// POST /api/courses - instructor creates a course
 router.post('/', auth, requireInstructor, async (req, res) => {
   try {
     const { title, description } = req.body;
@@ -38,12 +63,10 @@ router.post('/', auth, requireInstructor, async (req, res) => {
     });
     res.status(201).json(course);
   } catch (err) {
-    console.error('COURSE CREATE ERROR:', err.message);
     res.status(500).json({ message: 'Server error creating course.' });
   }
 });
 
-// PUT /api/courses/:id - instructor updates a course
 router.put('/:id', auth, requireInstructor, async (req, res) => {
   try {
     const course = await Course.findOneAndUpdate(
@@ -58,7 +81,6 @@ router.put('/:id', auth, requireInstructor, async (req, res) => {
   }
 });
 
-// DELETE /api/courses/:id - instructor deletes a course
 router.delete('/:id', auth, requireInstructor, async (req, res) => {
   try {
     const course = await Course.findOneAndDelete({
@@ -69,6 +91,47 @@ router.delete('/:id', auth, requireInstructor, async (req, res) => {
     res.json({ message: 'Course deleted.' });
   } catch (err) {
     res.status(500).json({ message: 'Server error deleting course.' });
+  }
+});
+
+router.post('/:id/enroll', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ message: 'Only students can enroll in courses.' });
+    }
+
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ message: 'Course not found.' });
+
+    const alreadyEnrolled = course.students.some(
+      (s) => s.toString() === req.user.userId
+    );
+    if (!alreadyEnrolled) {
+      course.students.push(req.user.userId);
+      await course.save();
+    }
+
+    res.json({ message: 'Enrolled successfully.', isEnrolled: true });
+  } catch (err) {
+    console.error('ENROLL ERROR:', err.message);
+    res.status(500).json({ message: 'Server error enrolling in course.' });
+  }
+});
+
+router.delete('/:id/enroll', auth, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    if (!course) return res.status(404).json({ message: 'Course not found.' });
+
+    course.students = course.students.filter(
+      (s) => s.toString() !== req.user.userId
+    );
+    await course.save();
+
+    res.json({ message: 'Unenrolled successfully.', isEnrolled: false });
+  } catch (err) {
+    console.error('UNENROLL ERROR:', err.message);
+    res.status(500).json({ message: 'Server error unenrolling from course.' });
   }
 });
 
