@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API_BASE_URL from '../api';
 
 export default function Dashboard() {
   const [courses, setCourses] = useState([]);
@@ -33,7 +34,7 @@ export default function Dashboard() {
 
   const fetchCourses = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/courses', {
+      const res = await axios.get(`${API_BASE_URL}/api/courses`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCourses(res.data);
@@ -50,7 +51,7 @@ export default function Dashboard() {
     setCreating(true);
     try {
       const res = await axios.post(
-        'http://localhost:5000/api/courses',
+        `${API_BASE_URL}/api/courses`,
         { title, description },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -90,7 +91,7 @@ export default function Dashboard() {
     setSavingEdit(true);
     try {
       const res = await axios.put(
-        `http://localhost:5000/api/courses/${courseId}`,
+        `${API_BASE_URL}/api/courses/${courseId}`,
         { title: editTitle, description: editDescription },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -114,7 +115,7 @@ export default function Dashboard() {
     setDeletingId(courseId);
     setError('');
     try {
-      await axios.delete(`http://localhost:5000/api/courses/${courseId}`, {
+      await axios.delete(`${API_BASE_URL}/api/courses/${courseId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCourses((prev) => prev.filter((c) => c._id !== courseId));

@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import API_BASE_URL from '../api';
 
 export default function CourseView() {
   const { id } = useParams();
@@ -27,6 +28,13 @@ export default function CourseView() {
   const [addingLesson, setAddingLesson] = useState(false);
   const [addLessonError, setAddLessonError] = useState('');
 
+  const [editingLesson, setEditingLesson] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingLesson, setSavingLesson] = useState(false);
+  const [editLessonError, setEditLessonError] = useState('');
+  const [deletingLesson, setDeletingLesson] = useState(false);
+
   useEffect(() => {
     if (!token) {
       navigate('/login');
@@ -43,7 +51,7 @@ export default function CourseView() {
 
   const fetchCourse = async () => {
     try {
-      const res = await axios.get(`http://localhost:5000/api/courses/${id}`, {
+      const res = await axios.get(`${API_BASE_URL}/api/courses/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCourse(res.data);
@@ -61,7 +69,7 @@ export default function CourseView() {
     setLoadingAttempts(true);
     try {
       const res = await axios.get(
-        `http://localhost:5000/api/lessons/${lessonId}/attempts`,
+        `${API_BASE_URL}/api/lessons/${lessonId}/attempts`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setPastAttempts(res.data);
@@ -78,6 +86,8 @@ export default function CourseView() {
     setActiveLessonId(lessonId);
     setAnswers({});
     setLastAttempt(null);
+    setEditingLesson(false);
+    setEditLessonError('');
   };
 
   const handleEnroll = async () => {
@@ -85,7 +95,7 @@ export default function CourseView() {
     setError('');
     try {
       await axios.post(
-        `http://localhost:5000/api/courses/${id}/enroll`,
+        `${API_BASE_URL}/api/courses/${id}/enroll`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -103,7 +113,7 @@ export default function CourseView() {
     setEnrolling(true);
     setError('');
     try {
-      await axios.delete(`http://localhost:5000/api/courses/${id}/enroll`, {
+      await axios.delete(`${API_BASE_URL}/api/courses/${id}/enroll`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       await fetchCourse();
@@ -120,7 +130,7 @@ export default function CourseView() {
     setAddingLesson(true);
     try {
       const res = await axios.post(
-        'http://localhost:5000/api/lessons',
+        `${API_BASE_URL}/api/lessons`,
         { courseId: id, title: lessonTitle, content: lessonContent },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -146,7 +156,7 @@ export default function CourseView() {
     setError('');
     try {
       const res = await axios.post(
-        `http://localhost:5000/api/lessons/${activeLesson._id}/generate-quiz`,
+        `${API_BASE_URL}/api/lessons/${activeLesson._id}/generate-quiz`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -181,7 +191,7 @@ export default function CourseView() {
       );
 
       const res = await axios.post(
-        `http://localhost:5000/api/lessons/${activeLesson._id}/attempts`,
+        `${API_BASE_URL}/api/lessons/${activeLesson._id}/attempts`,
         { answers: answersArray },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -192,6 +202,75 @@ export default function CourseView() {
       setError(err.response?.data?.message || 'Failed to submit quiz.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleStartEditLesson = () => {
+    if (!activeLesson) return;
+    setEditTitle(activeLesson.title);
+    setEditContent(activeLesson.content);
+    setEditLessonError('');
+    setEditingLesson(true);
+  };
+
+  const handleCancelEditLesson = () => {
+    setEditingLesson(false);
+    setEditLessonError('');
+  };
+
+  const handleSaveLessonEdit = async (e) => {
+    e.preventDefault();
+    if (!activeLesson) return;
+    setEditLessonError('');
+    setSavingLesson(true);
+    try {
+      const res = await axios.put(
+        `${API_BASE_URL}/api/lessons/${activeLesson._id}`,
+        { title: editTitle, content: editContent },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCourse((prev) => ({
+        ...prev,
+        lessons: prev.lessons.map((l) =>
+          l._id === res.data._id ? res.data : l
+        ),
+      }));
+      setEditingLesson(false);
+    } catch (err) {
+      setEditLessonError(err.response?.data?.message || 'Failed to update lesson.');
+    } finally {
+      setSavingLesson(false);
+    }
+  };
+
+  const handleDeleteLesson = async () => {
+    if (!activeLesson) return;
+    const confirmed = window.confirm(
+      `Delete "${activeLesson.title}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingLesson(true);
+    setError('');
+    try {
+      await axios.delete(`${API_BASE_URL}/api/lessons/${activeLesson._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCourse((prev) => {
+        const remaining = prev.lessons.filter((l) => l._id !== activeLesson._id);
+        return { ...prev, lessons: remaining };
+      });
+      setEditingLesson(false);
+      setAnswers({});
+      setLastAttempt(null);
+      setPastAttempts([]);
+      setActiveLessonId((prevId) => {
+        const remaining = course.lessons.filter((l) => l._id !== activeLesson._id);
+        return remaining.length > 0 ? remaining[0]._id : null;
+      });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete lesson.');
+    } finally {
+      setDeletingLesson(false);
     }
   };
 
@@ -327,12 +406,77 @@ export default function CourseView() {
               <div className="md:col-span-2 bg-white rounded-lg shadow-md p-6">
                 {activeLesson && (
                   <>
-                    <h2 className="text-xl font-semibold mb-3">{activeLesson.title}</h2>
-                    <p className="text-gray-700 whitespace-pre-wrap mb-6">
-                      {activeLesson.content}
-                    </p>
+                    {editingLesson ? (
+                      <form onSubmit={handleSaveLessonEdit} className="mb-6">
+                        <h2 className="text-lg font-semibold mb-4">Edit lesson</h2>
 
-                    {isInstructor && (
+                        {editLessonError && (
+                          <p className="text-red-500 text-sm mb-3">{editLessonError}</p>
+                        )}
+
+                        <input
+                          type="text"
+                          placeholder="Lesson title"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          required
+                          className="w-full border rounded px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <textarea
+                          placeholder="Lesson content"
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          required
+                          rows={6}
+                          className="w-full border rounded px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={savingLesson}
+                            className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {savingLesson ? 'Saving...' : 'Save Changes'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEditLesson}
+                            className="px-4 py-2 rounded font-medium text-gray-600 hover:bg-gray-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex items-start justify-between mb-3 gap-3">
+                        <h2 className="text-xl font-semibold">{activeLesson.title}</h2>
+                        {isInstructor && (
+                          <div className="flex gap-3 shrink-0">
+                            <button
+                              onClick={handleStartEditLesson}
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={handleDeleteLesson}
+                              disabled={deletingLesson}
+                              className="text-sm text-red-500 hover:underline disabled:opacity-50"
+                            >
+                              {deletingLesson ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!editingLesson && (
+                      <p className="text-gray-700 whitespace-pre-wrap mb-6">
+                        {activeLesson.content}
+                      </p>
+                    )}
+
+                    {!editingLesson && isInstructor && (
                       <button
                         onClick={handleGenerateQuiz}
                         disabled={generating}
@@ -346,7 +490,7 @@ export default function CourseView() {
                       </button>
                     )}
 
-                    {activeLesson.quiz?.length > 0 ? (
+                    {!editingLesson && (activeLesson.quiz?.length > 0 ? (
                       <div>
                         <h3 className="text-lg font-semibold mb-3">Quiz</h3>
                         {activeLesson.quiz.map((q, qi) => (
@@ -426,7 +570,7 @@ export default function CourseView() {
                       <p className="text-gray-400 text-sm">
                         No quiz yet for this lesson.
                       </p>
-                    )}
+                    ))}
                   </>
                 )}
               </div>

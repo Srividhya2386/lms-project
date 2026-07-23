@@ -49,6 +49,59 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+router.put('/:id', auth, requireInstructor, async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Lesson not found.' });
+
+    const course = await Course.findOne({
+      _id: lesson.course,
+      instructor: req.user.userId,
+    });
+    if (!course) {
+      return res.status(404).json({ message: 'Lesson not found or not owned by you.' });
+    }
+
+    const { title, content } = req.body;
+    if (title !== undefined) lesson.title = title;
+    if (content !== undefined) lesson.content = content;
+    await lesson.save();
+
+    res.json(lesson);
+  } catch (err) {
+    console.error('LESSON UPDATE ERROR:', err.message);
+    res.status(500).json({ message: 'Server error updating lesson.' });
+  }
+});
+
+router.delete('/:id', auth, requireInstructor, async (req, res) => {
+  try {
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ message: 'Lesson not found.' });
+
+    const course = await Course.findOne({
+      _id: lesson.course,
+      instructor: req.user.userId,
+    });
+    if (!course) {
+      return res.status(404).json({ message: 'Lesson not found or not owned by you.' });
+    }
+
+    await Lesson.findByIdAndDelete(req.params.id);
+    course.lessons = course.lessons.filter(
+      (l) => l.toString() !== req.params.id
+    );
+    await course.save();
+
+    await QuizAttempt.deleteMany({ lesson: req.params.id });
+
+    res.json({ message: 'Lesson deleted.' });
+  } catch (err) {
+    console.error('LESSON DELETE ERROR:', err.message);
+    res.status(500).json({ message: 'Server error deleting lesson.' });
+  }
+});
+
 router.post('/:id/generate-quiz', auth, requireInstructor, async (req, res) => {
   try {
     const lesson = await Lesson.findById(req.params.id);
